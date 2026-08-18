@@ -1,0 +1,658 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="UTF-8">
+<meta name="viewport" content="width=device-width, initial-scale=1.0">
+<title>Venture Tracker</title>
+<style>
+  .viz-root {
+    color-scheme: light;
+    --surface-1:      #fcfcfb;
+    --page:           #f9f9f7;
+    --text-primary:   #0b0b0b;
+    --text-secondary: #52514e;
+    --text-muted:     #898781;
+    --gridline:       #e1e0d9;
+    --border:         rgba(11,11,11,0.10);
+    --good:           #0ca30c;
+    --warning:        #fab219;
+    --serious:        #ec835a;
+    --critical:       #d03b3b;
+    --series-1:       #2a78d6;
+    --not-started-bg: #eeede8;
+    --not-started-fg: #898781;
+  }
+  @media (prefers-color-scheme: dark) {
+    :root:where(:not([data-theme="light"])) .viz-root {
+      color-scheme: dark;
+      --surface-1:      #1a1a19;
+      --page:           #0d0d0d;
+      --text-primary:   #ffffff;
+      --text-secondary: #c3c2b7;
+      --text-muted:     #898781;
+      --gridline:       #2c2c2a;
+      --border:         rgba(255,255,255,0.10);
+      --good:           #0ca30c;
+      --warning:        #fab219;
+      --serious:        #ec835a;
+      --critical:       #e66767;
+      --series-1:       #3987e5;
+      --not-started-bg: #26261f;
+      --not-started-fg: #898781;
+    }
+  }
+
+  * { box-sizing: border-box; }
+  body {
+    margin: 0;
+    background: var(--page);
+    font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+    color: var(--text-primary);
+  }
+  .wrap { max-width: 1080px; margin: 0 auto; padding: 32px 20px 100px; }
+
+  header.page-head {
+    display: flex; justify-content: space-between; align-items: flex-start;
+    margin-bottom: 24px; gap: 16px; flex-wrap: wrap;
+  }
+  header.page-head h1 { font-size: 24px; font-weight: 700; margin: 0 0 4px; letter-spacing: -0.01em; }
+  header.page-head p { margin: 0; color: var(--text-secondary); font-size: 13.5px; }
+  .head-actions { display: flex; gap: 8px; align-items: center; }
+
+  button {
+    font-family: inherit; font-size: 13px; font-weight: 600;
+    border-radius: 8px; border: 1px solid var(--border);
+    background: var(--surface-1); color: var(--text-primary);
+    padding: 7px 12px; cursor: pointer;
+  }
+  button:hover { background: var(--not-started-bg); }
+  button.primary { background: var(--series-1); color: #fff; border-color: transparent; }
+  button.primary:hover { filter: brightness(1.06); }
+  button.ghost { background: transparent; border: none; color: var(--text-muted); padding: 4px 6px; }
+  button.ghost:hover { color: var(--critical); background: transparent; }
+  button.small { font-size: 11.5px; padding: 4px 8px; }
+
+  input[type=text], textarea, select {
+    font-family: inherit; font-size: 13px; color: var(--text-primary);
+    background: var(--surface-1); border: 1px solid var(--border);
+    border-radius: 7px; padding: 6px 9px; width: 100%;
+  }
+  textarea { resize: none; min-height: 30px; }
+
+  .tiles {
+    display: grid; grid-template-columns: repeat(4, 1fr); gap: 12px; margin-bottom: 24px;
+  }
+  .tile { background: var(--surface-1); border: 1px solid var(--border); border-radius: 10px; padding: 14px 16px; }
+  .tile .label { font-size: 11.5px; color: var(--text-muted); margin-bottom: 5px; }
+  .tile .value { font-size: 26px; font-weight: 700; font-variant-numeric: proportional-nums; line-height: 1; }
+  .tile .value.crit { color: var(--critical); }
+  .tile .sub { font-size: 11.5px; color: var(--text-secondary); margin-top: 5px; }
+
+  .board { background: var(--surface-1); border: 1px solid var(--border); border-radius: 12px; overflow: hidden; }
+  .board-head {
+    display: flex; justify-content: space-between; align-items: center;
+    padding: 12px 18px; border-bottom: 1px solid var(--gridline);
+  }
+  .board-head h2 { font-size: 14px; margin: 0; }
+  .legend { display: flex; gap: 14px; font-size: 11.5px; color: var(--text-secondary); }
+  .legend span { display: inline-flex; align-items: center; gap: 5px; }
+  .dot { width: 8px; height: 8px; border-radius: 3px; display: inline-block; }
+  .dot.good { background: var(--good); }
+  .dot.warn { background: var(--warning); }
+  .dot.crit { background: var(--critical); }
+  .dot.none { background: var(--not-started-bg); border: 1px solid var(--gridline); }
+
+  .venture { border-bottom: 1px solid var(--gridline); }
+  .venture:last-child { border-bottom: none; }
+  .venture-summary {
+    display: grid;
+    grid-template-columns: 1fr 150px 110px 1fr 1fr 28px;
+    align-items: center; gap: 14px; padding: 13px 18px; cursor: pointer;
+  }
+  .venture-summary:hover { background: rgba(0,0,0,0.015); }
+
+  .venture-name-row { display: flex; align-items: center; gap: 6px; }
+  .venture-name { font-weight: 600; font-size: 13.5px; }
+  .venture-name .count { font-weight: 400; color: var(--text-muted); font-size: 11.5px; margin-left: 4px; }
+
+  .progress-bar { height: 6px; border-radius: 4px; background: var(--gridline); overflow: hidden; }
+  .progress-fill { height: 100%; border-radius: 4px; background: var(--series-1); transition: width 0.2s ease; }
+  .progress-pct { font-size: 11px; color: var(--text-muted); margin-top: 4px; font-variant-numeric: tabular-nums; }
+
+  select.status-select {
+    font-size: 11.5px; font-weight: 600; padding: 4px 8px; border-radius: 999px;
+    width: fit-content; border: none; cursor: pointer;
+  }
+  select.status-select.ontrack    { background: rgba(12,163,12,0.12);   color: var(--good); }
+  select.status-select.stalled    { background: rgba(250,178,25,0.18); color: #9a6a00; }
+  select.status-select.blocked    { background: rgba(208,59,59,0.12);  color: var(--critical); }
+  select.status-select.notstarted { background: var(--not-started-bg); color: var(--not-started-fg); }
+  select.status-select.done       { background: rgba(42,120,214,0.14); color: var(--series-1); }
+
+  .field-display { font-size: 12.5px; color: var(--text-primary); cursor: text; }
+  .field-display.blocked-active { color: var(--critical); font-weight: 600; }
+  .field-display.blocked-none { color: var(--text-muted); }
+  .field-display.empty { color: var(--text-muted); font-style: italic; }
+
+  .chevron { color: var(--text-muted); font-size: 12px; transition: transform 0.15s ease; justify-self: end; }
+  .venture.open .chevron { transform: rotate(90deg); }
+
+  .venture-detail { display: none; padding: 6px 18px 18px 18px; background: rgba(0,0,0,0.012); }
+  .venture.open .venture-detail { display: block; }
+
+  .detail-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 20px; margin-bottom: 14px; }
+  .detail-field label { display: block; font-size: 11px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; margin-bottom: 4px; }
+
+  .checklist { display: flex; flex-direction: column; gap: 4px; margin-bottom: 8px; }
+  .check-item { display: flex; align-items: center; gap: 8px; }
+  .check-box {
+    width: 17px; height: 17px; border-radius: 5px; flex-shrink: 0;
+    display: inline-flex; align-items: center; justify-content: center;
+    font-size: 11px; color: #fff; cursor: pointer; border: 1px solid var(--gridline);
+  }
+  .check-box.done { background: var(--good); border-color: transparent; }
+  .check-box.current { background: var(--warning); color: #3a2a00; border-color: transparent; }
+  .check-box.pending { background: var(--not-started-bg); }
+  .check-item input[type=text] { flex: 1; border: none; background: transparent; padding: 4px 2px; }
+  .check-item.current-item input[type=text] { font-weight: 600; }
+  .check-item .check-box.pending::after { content: ''; }
+
+  .add-item-row { display: flex; gap: 6px; margin-top: 4px; }
+  .add-item-row input { flex: 1; }
+
+  .venture-footer-actions { display: flex; justify-content: flex-end; margin-top: 10px; }
+
+  .col-head-row {
+    display: grid; grid-template-columns: 1fr 150px 110px 1fr 1fr 28px; gap: 14px; padding: 0 18px 8px;
+  }
+  .col-head-row span { font-size: 10.5px; font-weight: 600; color: var(--text-muted); text-transform: uppercase; letter-spacing: 0.03em; }
+
+  .add-venture-row { padding: 14px 18px; display: flex; gap: 8px; border-top: 1px solid var(--gridline); }
+  .add-venture-row input { flex: 1; }
+
+  .empty-board { padding: 40px 18px; text-align: center; color: var(--text-muted); font-size: 13px; }
+
+  .note { font-size: 11.5px; color: var(--text-muted); margin-top: 16px; line-height: 1.5; }
+  .last-saved { font-size: 11px; color: var(--text-muted); }
+  .sync-status { font-size: 11px; font-weight: 600; display: inline-flex; align-items: center; gap: 5px; }
+  .sync-status .dot2 { width: 7px; height: 7px; border-radius: 50%; display: inline-block; }
+  .sync-status.on { color: var(--good); }
+  .sync-status.on .dot2 { background: var(--good); }
+  .sync-status.off { color: var(--text-muted); }
+  .sync-status.off .dot2 { background: var(--not-started-fg); }
+  .sync-status.off { cursor: pointer; text-decoration: underline dotted; }
+
+  .modal-overlay {
+    display: none;
+    position: fixed; inset: 0; background: rgba(0,0,0,0.45);
+    align-items: center; justify-content: center; z-index: 100; padding: 20px;
+  }
+  .modal-overlay.show { display: flex; }
+  .modal-card {
+    background: var(--surface-1); border-radius: 12px; border: 1px solid var(--border);
+    padding: 22px; max-width: 440px; width: 100%;
+  }
+  .modal-card h2 { font-size: 16px; margin: 0 0 6px; }
+  .modal-card h2 .opt { font-size: 12px; font-weight: 400; color: var(--text-muted); }
+  .modal-card p { font-size: 12.5px; color: var(--text-secondary); margin: 0 0 12px; line-height: 1.5; }
+  .modal-card p strong { color: var(--text-primary); }
+  .modal-card details { margin-bottom: 12px; }
+  .modal-card summary { font-size: 12px; color: var(--series-1); cursor: pointer; }
+  .modal-card details div { font-size: 12px; color: var(--text-secondary); line-height: 1.8; padding: 8px 0 0 4px; }
+  .modal-card textarea { font-family: monospace; font-size: 11.5px; resize: vertical; min-height: 110px; }
+  .modal-error { color: var(--critical); font-size: 12px; margin-top: 8px; display: none; }
+  .modal-actions { display: flex; gap: 8px; margin-top: 16px; justify-content: flex-end; }
+</style>
+</head>
+<body>
+<div class="viz-root">
+  <div class="wrap">
+    <header class="page-head">
+      <div>
+        <h1>Venture Tracker</h1>
+        <p>One board. Every unfinished thing, and why it's unfinished.</p>
+      </div>
+      <div class="head-actions">
+        <span class="sync-status" id="syncStatus"></span>
+        <span class="last-saved" id="lastSaved"></span>
+        <button id="exportBtn">Export backup</button>
+        <button id="importBtn">Import backup</button>
+        <input type="file" id="importFile" accept="application/json" style="display:none;">
+      </div>
+    </header>
+
+    <div class="tiles" id="tiles"></div>
+
+    <div class="board">
+      <div class="board-head">
+        <h2 id="boardDate"></h2>
+        <div class="legend">
+          <span><i class="dot good"></i>On track</span>
+          <span><i class="dot warn"></i>Stalled</span>
+          <span><i class="dot crit"></i>Blocked</span>
+          <span><i class="dot none"></i>Not started</span>
+        </div>
+      </div>
+
+      <div class="col-head-row">
+        <span>Venture</span>
+        <span>Progress</span>
+        <span>Status</span>
+        <span>Next action</span>
+        <span>Blocked by</span>
+        <span></span>
+      </div>
+
+      <div id="ventureList"></div>
+
+      <div class="add-venture-row">
+        <input type="text" id="newVentureName" placeholder="Add a venture… (e.g. Extractor Business)">
+        <button class="primary" id="addVentureBtn">+ Add</button>
+      </div>
+    </div>
+
+    <p class="note">
+      Even with cloud sync on, this browser also keeps a local copy for instant loading — export a backup after any real session, just as a habit. Nothing here is guessed for you: only the ventures and steps you enter show up.
+    </p>
+  </div>
+
+  <!-- FIREBASE MODAL -->
+  <div id="fb-modal" class="modal-overlay">
+    <div class="modal-card">
+      <h2>Enable Cloud Sync <span class="opt">(optional)</span></h2>
+      <p>Paste your Firebase config to sync across devices. <strong>Skip to use offline only.</strong></p>
+      <details>
+        <summary>How to get your Firebase config ›</summary>
+        <div>
+          1. <a href="https://console.firebase.google.com" target="_blank" style="color:var(--series-1)">console.firebase.google.com</a> → open <strong>the-hub-c8623</strong><br>
+          2. Gear icon → Project settings → "Your apps" → copy the <code>firebaseConfig</code> object<br>
+          3. Paste the whole thing below (curly braces and all)
+        </div>
+      </details>
+      <textarea id="fb-config-input" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <div class="modal-error" id="fb-error"></div>
+      <div class="modal-actions">
+        <button class="ghost" onclick="skipFbConfig()">Skip — use offline</button>
+        <button class="primary" onclick="saveFbConfig()">Save &amp; Enable Sync</button>
+      </div>
+    </div>
+  </div>
+</div>
+
+<!-- Firebase (compat SDK — same style as the Hub app) -->
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-app-compat.js"></script>
+<script src="https://www.gstatic.com/firebasejs/10.12.2/firebase-firestore-compat.js"></script>
+
+<script>
+const FB_CONFIG_KEY = 'ventureTrackerFbConfig_v1';
+const FB_SKIP_KEY = 'ventureTrackerFbSkip_v1';
+
+let db = null;
+let docRef = null;
+let firebaseReady = false;
+let suppressNextSnapshot = false;
+
+function initFirebase(configObj) {
+  try {
+    if (!firebase.apps || !firebase.apps.length) {
+      firebase.initializeApp(configObj);
+    }
+    db = firebase.firestore();
+    docRef = db.collection('ventureTracker').doc('main');
+    firebaseReady = true;
+    attachSnapshotListener();
+    return true;
+  } catch (e) {
+    console.warn('Firebase init failed, running local-only:', e);
+    firebaseReady = false;
+    return false;
+  }
+}
+
+function attachSnapshotListener() {
+  docRef.onSnapshot(snap => {
+    if (suppressNextSnapshot) {
+      suppressNextSnapshot = false;
+      return;
+    }
+    if (snap.exists) {
+      // Cloud has data (from this device or another) — it wins as source of truth.
+      data = snap.data();
+      localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+      render();
+    } else {
+      // No cloud doc yet — seed it from whatever's currently local.
+      docRef.set(data).catch(e => console.warn('Initial Firebase seed failed:', e));
+    }
+  }, err => {
+    console.warn('Firebase listener error, staying local-only for this session:', err);
+  });
+}
+
+function openFbModal() {
+  document.getElementById('fb-error').style.display = 'none';
+  document.getElementById('fb-modal').classList.add('show');
+}
+function closeFbModal() {
+  document.getElementById('fb-modal').classList.remove('show');
+}
+function skipFbConfig() {
+  localStorage.setItem(FB_SKIP_KEY, '1');
+  closeFbModal();
+}
+function saveFbConfig() {
+  const raw = document.getElementById('fb-config-input').value.trim();
+  const errEl = document.getElementById('fb-error');
+  let parsed;
+  try {
+    parsed = JSON.parse(raw);
+    if (!parsed.apiKey || !parsed.projectId) throw new Error('missing fields');
+  } catch (e) {
+    errEl.textContent = "That doesn't look like a complete Firebase config — make sure you copied the whole { ... } block.";
+    errEl.style.display = 'block';
+    return;
+  }
+  localStorage.setItem(FB_CONFIG_KEY, JSON.stringify(parsed));
+  localStorage.removeItem(FB_SKIP_KEY);
+  const ok = initFirebase(parsed);
+  if (!ok) {
+    errEl.textContent = "Firebase didn't accept that config. Double check you copied it correctly.";
+    errEl.style.display = 'block';
+    return;
+  }
+  closeFbModal();
+  render();
+}
+
+const STORAGE_KEY = 'ventureTrackerData_v1';
+
+const DEFAULT_DATA = {
+  ventures: [
+    {
+      id: 'fiverr',
+      name: 'Fiverr Gigs',
+      tag: '7 gigs',
+      status: 'blocked',
+      nextAction: 'Publish once EIN clears',
+      blockedBy: 'EIN verification (external)',
+      open: true,
+      items: [
+        { text: 'Chatbot receptionist gig written', state: 'done' },
+        { text: 'Document extraction gig written', state: 'done' },
+        { text: 'Landing page gig written', state: 'done' },
+        { text: 'AI photography gig written', state: 'done' },
+        { text: 'AI video B-roll gig written', state: 'done' },
+        { text: 'Custom web app gig written', state: 'done' },
+        { text: 'AI consulting gig written', state: 'done' },
+        { text: 'EIN / identity verification', state: 'current' },
+        { text: 'Publish all 7 gigs live', state: 'pending' },
+        { text: 'First inbound inquiry', state: 'pending' }
+      ]
+    }
+  ]
+};
+
+let data = loadData();
+
+function loadData() {
+  try {
+    const raw = localStorage.getItem(STORAGE_KEY);
+    if (raw) return JSON.parse(raw);
+  } catch (e) {}
+  return JSON.parse(JSON.stringify(DEFAULT_DATA));
+}
+
+function saveData() {
+  localStorage.setItem(STORAGE_KEY, JSON.stringify(data));
+  document.getElementById('lastSaved').textContent = 'Saved ' + new Date().toLocaleTimeString([], {hour: '2-digit', minute:'2-digit'});
+
+  if (firebaseReady && docRef) {
+    suppressNextSnapshot = true;
+    docRef.set(data).catch(e => console.warn('Firebase sync failed, saved locally only:', e));
+  }
+
+  render();
+}
+
+function progressOf(v) {
+  if (!v.items.length) return { done: 0, total: 0, pct: 0 };
+  const done = v.items.filter(i => i.state === 'done').length;
+  return { done, total: v.items.length, pct: Math.round((done / v.items.length) * 100) };
+}
+
+function statusLabel(s) {
+  return { ontrack: 'On track', stalled: 'Stalled', blocked: 'Blocked', notstarted: 'Not started', done: 'Done' }[s] || s;
+}
+
+function render() {
+  document.getElementById('boardDate').textContent =
+    'Ventures — ' + new Date().toLocaleDateString(undefined, { month: 'long', day: 'numeric', year: 'numeric' });
+
+  const syncEl = document.getElementById('syncStatus');
+  if (firebaseReady) {
+    syncEl.className = 'sync-status on';
+    syncEl.innerHTML = '<span class="dot2"></span>Synced across devices';
+    syncEl.onclick = null;
+  } else {
+    syncEl.className = 'sync-status off';
+    syncEl.innerHTML = '<span class="dot2"></span>Local only (tap to enable sync)';
+    syncEl.onclick = openFbModal;
+  }
+
+  // stat tiles
+  const total = data.ventures.length;
+  const blocked = data.ventures.filter(v => v.status === 'blocked').length;
+  const readyNotSent = data.ventures.filter(v => {
+    const p = progressOf(v);
+    return p.total > 0 && p.done === p.total - 1 && v.status === 'blocked';
+  }).length;
+  const noBlockerNoMotion = data.ventures.filter(v => v.status === 'stalled' && (!v.blockedBy || v.blockedBy.trim() === '')).length;
+
+  document.getElementById('tiles').innerHTML = `
+    <div class="tile"><div class="label">Active ventures</div><div class="value">${total}</div><div class="sub">tracked on this board</div></div>
+    <div class="tile"><div class="label">Blocked</div><div class="value ${blocked ? 'crit' : ''}">${blocked}</div><div class="sub">have a named blocker</div></div>
+    <div class="tile"><div class="label">One step from live</div><div class="value ${readyNotSent ? 'crit' : ''}">${readyNotSent}</div><div class="sub">last step pending</div></div>
+    <div class="tile"><div class="label">No blocker, no motion</div><div class="value">${noBlockerNoMotion}</div><div class="sub">nothing's stopping these</div></div>
+  `;
+
+  const listEl = document.getElementById('ventureList');
+  if (!data.ventures.length) {
+    listEl.innerHTML = `<div class="empty-board">No ventures yet — add one below.</div>`;
+    return;
+  }
+
+  listEl.innerHTML = data.ventures.map(v => {
+    const p = progressOf(v);
+    const blockedClass = v.blockedBy && v.blockedBy.trim() ? 'blocked-active' : 'blocked-none';
+    const blockedText = v.blockedBy && v.blockedBy.trim() ? v.blockedBy : 'Nothing — just not started';
+    const nextText = v.nextAction && v.nextAction.trim() ? v.nextAction : '—';
+
+    const checklistHtml = v.items.length ? `
+      <div class="checklist">
+        ${v.items.map((it, idx) => `
+          <div class="check-item ${it.state === 'current' ? 'current-item' : ''}">
+            <span class="check-box ${it.state}" onclick="cycleItem('${v.id}', ${idx})" title="Click to cycle: pending → current → done">${it.state === 'done' ? '✓' : it.state === 'current' ? '›' : ''}</span>
+            <input type="text" value="${escapeAttr(it.text)}" onchange="updateItemText('${v.id}', ${idx}, this.value)">
+            <button class="ghost" onclick="removeItem('${v.id}', ${idx})" title="Remove step">✕</button>
+          </div>
+        `).join('')}
+      </div>
+    ` : `<p class="field-display empty">No steps yet — add the ones that matter for this venture below.</p>`;
+
+    return `
+    <div class="venture ${v.open ? 'open' : ''}" id="row-${v.id}">
+      <div class="venture-summary" onclick="toggleOpen(event, '${v.id}')">
+        <div class="venture-name-row">
+          <span class="venture-name">${escapeHtml(v.name)}${v.tag ? `<span class="count">${escapeHtml(v.tag)}</span>` : ''}</span>
+        </div>
+        <div>
+          <div class="progress-bar"><div class="progress-fill" style="width:${p.pct}%"></div></div>
+          <div class="progress-pct">${p.total ? p.done + ' of ' + p.total + ' steps' : 'no steps yet'}</div>
+        </div>
+        <div onclick="event.stopPropagation()">
+          <select class="status-select ${v.status}" onchange="updateStatus('${v.id}', this.value)">
+            <option value="ontrack" ${v.status==='ontrack'?'selected':''}>On track</option>
+            <option value="stalled" ${v.status==='stalled'?'selected':''}>Stalled</option>
+            <option value="blocked" ${v.status==='blocked'?'selected':''}>Blocked</option>
+            <option value="notstarted" ${v.status==='notstarted'?'selected':''}>Not started</option>
+            <option value="done" ${v.status==='done'?'selected':''}>Done</option>
+          </select>
+        </div>
+        <div class="field-display ${nextText==='—'?'empty':''}">${escapeHtml(nextText)}</div>
+        <div class="field-display ${blockedClass}">${escapeHtml(blockedText)}</div>
+        <div class="chevron">▸</div>
+      </div>
+      <div class="venture-detail">
+        <div class="detail-grid">
+          <div class="detail-field">
+            <label>Next action</label>
+            <textarea onchange="updateField('${v.id}','nextAction', this.value)" placeholder="What's the single next thing?">${escapeHtml(v.nextAction || '')}</textarea>
+          </div>
+          <div class="detail-field">
+            <label>Blocked by (leave blank if nothing's actually stopping you)</label>
+            <textarea onchange="updateField('${v.id}','blockedBy', this.value)" placeholder="Leave blank if there's no real blocker">${escapeHtml(v.blockedBy || '')}</textarea>
+          </div>
+        </div>
+        ${checklistHtml}
+        <div class="add-item-row">
+          <input type="text" placeholder="Add a step…" id="newitem-${v.id}" onkeydown="if(event.key==='Enter'){addItem('${v.id}')}">
+          <button class="small" onclick="addItem('${v.id}')">+ Add step</button>
+        </div>
+        <div class="venture-footer-actions">
+          <button class="small ghost" onclick="removeVenture('${v.id}')">Delete venture</button>
+        </div>
+      </div>
+    </div>
+    `;
+  }).join('');
+}
+
+function escapeHtml(s) {
+  return (s || '').replace(/[&<>"']/g, c => ({'&':'&amp;','<':'&lt;','>':'&gt;','"':'&quot;',"'":'&#39;'}[c]));
+}
+function escapeAttr(s) { return escapeHtml(s); }
+
+function findVenture(id) { return data.ventures.find(v => v.id === id); }
+
+function toggleOpen(evt, id) {
+  const v = findVenture(id);
+  v.open = !v.open;
+  saveData();
+}
+
+function cycleItem(id, idx) {
+  const v = findVenture(id);
+  const order = ['pending', 'current', 'done'];
+  const i = order.indexOf(v.items[idx].state);
+  v.items[idx].state = order[(i + 1) % order.length];
+  saveData();
+}
+
+function updateItemText(id, idx, text) {
+  const v = findVenture(id);
+  v.items[idx].text = text;
+  saveData();
+}
+
+function removeItem(id, idx) {
+  const v = findVenture(id);
+  v.items.splice(idx, 1);
+  saveData();
+}
+
+function addItem(id) {
+  const input = document.getElementById('newitem-' + id);
+  const text = input.value.trim();
+  if (!text) return;
+  const v = findVenture(id);
+  v.items.push({ text, state: 'pending' });
+  input.value = '';
+  saveData();
+}
+
+function updateStatus(id, status) {
+  const v = findVenture(id);
+  v.status = status;
+  saveData();
+}
+
+function updateField(id, field, value) {
+  const v = findVenture(id);
+  v[field] = value;
+  saveData();
+}
+
+function removeVenture(id) {
+  if (!confirm("Delete this venture? This can't be undone (unless you have a backup export).")) return;
+  data.ventures = data.ventures.filter(v => v.id !== id);
+  saveData();
+}
+
+document.getElementById('addVentureBtn').addEventListener('click', () => {
+  const input = document.getElementById('newVentureName');
+  const name = input.value.trim();
+  if (!name) return;
+  const id = 'v' + Date.now();
+  data.ventures.push({
+    id, name, tag: '', status: 'notstarted',
+    nextAction: '', blockedBy: '', open: true, items: []
+  });
+  input.value = '';
+  saveData();
+});
+document.getElementById('newVentureName').addEventListener('keydown', e => {
+  if (e.key === 'Enter') document.getElementById('addVentureBtn').click();
+});
+
+document.getElementById('exportBtn').addEventListener('click', () => {
+  const blob = new Blob([JSON.stringify(data, null, 2)], { type: 'application/json' });
+  const url = URL.createObjectURL(blob);
+  const a = document.createElement('a');
+  const stamp = new Date().toISOString().slice(0,10);
+  a.href = url;
+  a.download = `venture-tracker-backup-${stamp}.json`;
+  a.click();
+  URL.revokeObjectURL(url);
+});
+
+document.getElementById('importBtn').addEventListener('click', () => {
+  document.getElementById('importFile').click();
+});
+document.getElementById('importFile').addEventListener('change', (e) => {
+  const file = e.target.files[0];
+  if (!file) return;
+  const reader = new FileReader();
+  reader.onload = (evt) => {
+    try {
+      const parsed = JSON.parse(evt.target.result);
+      if (!parsed.ventures) throw new Error('Not a valid backup file');
+      data = parsed;
+      saveData();
+      alert('Backup restored.');
+    } catch (err) {
+      alert('Could not read that file as a Venture Tracker backup.');
+    }
+  };
+  reader.readAsText(file);
+  e.target.value = '';
+});
+
+// Initial paint from local storage so the app is instant even before Firebase responds.
+render();
+
+// If a config was saved on a previous visit, reconnect automatically.
+const savedFbConfig = localStorage.getItem(FB_CONFIG_KEY);
+if (savedFbConfig) {
+  try {
+    initFirebase(JSON.parse(savedFbConfig));
+    render();
+  } catch (e) {
+    console.warn('Saved Firebase config was invalid:', e);
+  }
+} else if (!localStorage.getItem(FB_SKIP_KEY)) {
+  // First visit, no config, never skipped — offer to set it up.
+  openFbModal();
+}
+</script>
+</body>
+</html>
