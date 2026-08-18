@@ -114,6 +114,23 @@
   .venture-name-row { display: flex; align-items: center; gap: 6px; }
   .venture-name { font-weight: 600; font-size: 13.5px; }
   .venture-name .count { font-weight: 400; color: var(--text-muted); font-size: 11.5px; margin-left: 4px; }
+  .venture-name-input {
+    font-weight: 600; font-size: 13.5px; border: 1px solid transparent; background: transparent;
+    padding: 3px 5px; border-radius: 5px; width: auto; flex: 1; min-width: 0;
+  }
+  .venture-name-input:hover { border-color: var(--gridline); }
+  .venture-name-input:focus { border-color: var(--series-1); outline: none; background: var(--surface-1); }
+  .venture-name-row .count { font-weight: 400; color: var(--text-muted); font-size: 11.5px; white-space: nowrap; }
+
+  .reorder-btns { display: inline-flex; flex-direction: column; gap: 0; flex-shrink: 0; }
+  button.tiny {
+    font-size: 8px; line-height: 1; padding: 1px 4px; border-radius: 3px; color: var(--text-muted);
+  }
+  button.tiny:disabled { opacity: 0.25; cursor: default; }
+  button.tiny:disabled:hover { background: transparent; }
+  .check-item .reorder-btns { margin-right: 2px; }
+
+  .last-touched { font-size: 11px; color: var(--text-muted); margin-right: auto; }
 
   .progress-bar { height: 6px; border-radius: 4px; background: var(--gridline); overflow: hidden; }
   .progress-fill { height: 100%; border-radius: 4px; background: var(--series-1); transition: width 0.2s ease; }
@@ -477,21 +494,32 @@ function render() {
     return;
   }
 
-  listEl.innerHTML = data.ventures.map(v => {
+  listEl.innerHTML = data.ventures.map((v, idx) => {
     const p = progressOf(v);
     const blockedClass = v.blockedBy && v.blockedBy.trim() ? 'blocked-active' : 'blocked-none';
     const blockedText = v.blockedBy && v.blockedBy.trim() ? v.blockedBy : 'Nothing — just not started';
     const nextText = v.nextAction && v.nextAction.trim() ? v.nextAction : '—';
+    const isFirst = idx === 0;
+    const isLast = idx === data.ventures.length - 1;
+    const lastTouched = v.updatedAt ? timeAgo(v.updatedAt) : null;
 
     const checklistHtml = v.items.length ? `
       <div class="checklist">
-        ${v.items.map((it, idx) => `
+        ${v.items.map((it, iidx) => {
+          const itFirst = iidx === 0;
+          const itLast = iidx === v.items.length - 1;
+          return `
           <div class="check-item ${it.state === 'current' ? 'current-item' : ''}">
-            <span class="check-box ${it.state}" onclick="cycleItem('${v.id}', ${idx})" title="Click to cycle: pending → current → done">${it.state === 'done' ? '✓' : it.state === 'current' ? '›' : ''}</span>
-            <input type="text" value="${escapeAttr(it.text)}" onchange="updateItemText('${v.id}', ${idx}, this.value)">
-            <button class="ghost" onclick="removeItem('${v.id}', ${idx})" title="Remove step">✕</button>
+            <span class="reorder-btns">
+              <button class="ghost tiny" onclick="moveItem('${v.id}', ${iidx}, -1)" title="Move up" ${itFirst ? 'disabled' : ''}>▲</button>
+              <button class="ghost tiny" onclick="moveItem('${v.id}', ${iidx}, 1)" title="Move down" ${itLast ? 'disabled' : ''}>▼</button>
+            </span>
+            <span class="check-box ${it.state}" onclick="cycleItem('${v.id}', ${iidx})" title="Click to cycle: pending → current → done">${it.state === 'done' ? '✓' : it.state === 'current' ? '›' : ''}</span>
+            <input type="text" value="${escapeAttr(it.text)}" onchange="updateItemText('${v.id}', ${iidx}, this.value)">
+            <button class="ghost" onclick="removeItem('${v.id}', ${iidx})" title="Remove step">✕</button>
           </div>
-        `).join('')}
+        `;
+        }).join('')}
       </div>
     ` : `<p class="field-display empty">No steps yet — add the ones that matter for this venture below.</p>`;
 
@@ -499,7 +527,12 @@ function render() {
     <div class="venture ${v.open ? 'open' : ''}" id="row-${v.id}">
       <div class="venture-summary" onclick="toggleOpen(event, '${v.id}')">
         <div class="venture-name-row">
-          <span class="venture-name">${escapeHtml(v.name)}${v.tag ? `<span class="count">${escapeHtml(v.tag)}</span>` : ''}</span>
+          <span class="reorder-btns" onclick="event.stopPropagation()">
+            <button class="ghost tiny" onclick="moveVenture('${v.id}', -1)" title="Move up" ${isFirst ? 'disabled' : ''}>▲</button>
+            <button class="ghost tiny" onclick="moveVenture('${v.id}', 1)" title="Move down" ${isLast ? 'disabled' : ''}>▼</button>
+          </span>
+          <input class="venture-name-input" type="text" value="${escapeAttr(v.name)}" onclick="event.stopPropagation()" onchange="updateVentureName('${v.id}', this.value)">
+          ${v.tag ? `<span class="count">${escapeHtml(v.tag)}</span>` : ''}
         </div>
         <div>
           <div class="progress-bar"><div class="progress-fill" style="width:${p.pct}%"></div></div>
@@ -535,6 +568,7 @@ function render() {
           <button class="small" onclick="addItem('${v.id}')">+ Add step</button>
         </div>
         <div class="venture-footer-actions">
+          <span class="last-touched">${lastTouched ? 'Last touched ' + lastTouched : ''}</span>
           <button class="small ghost" onclick="removeVenture('${v.id}')">Delete venture</button>
         </div>
       </div>
@@ -550,9 +584,46 @@ function escapeAttr(s) { return escapeHtml(s); }
 
 function findVenture(id) { return data.ventures.find(v => v.id === id); }
 
+function touch(v) { v.updatedAt = Date.now(); }
+
+function timeAgo(ts) {
+  const days = Math.floor((Date.now() - ts) / 86400000);
+  if (days <= 0) return 'today';
+  if (days === 1) return 'yesterday';
+  return days + ' days ago';
+}
+
 function toggleOpen(evt, id) {
   const v = findVenture(id);
   v.open = !v.open;
+  saveData();
+}
+
+function moveVenture(id, dir) {
+  const idx = data.ventures.findIndex(v => v.id === id);
+  const target = idx + dir;
+  if (target < 0 || target >= data.ventures.length) return;
+  const [item] = data.ventures.splice(idx, 1);
+  data.ventures.splice(target, 0, item);
+  saveData();
+}
+
+function moveItem(ventureId, idx, dir) {
+  const v = findVenture(ventureId);
+  const target = idx + dir;
+  if (target < 0 || target >= v.items.length) return;
+  const [item] = v.items.splice(idx, 1);
+  v.items.splice(target, 0, item);
+  touch(v);
+  saveData();
+}
+
+function updateVentureName(id, name) {
+  const trimmed = name.trim();
+  if (!trimmed) { render(); return; } // ignore blanking out the name entirely
+  const v = findVenture(id);
+  v.name = trimmed;
+  touch(v);
   saveData();
 }
 
@@ -561,18 +632,23 @@ function cycleItem(id, idx) {
   const order = ['pending', 'current', 'done'];
   const i = order.indexOf(v.items[idx].state);
   v.items[idx].state = order[(i + 1) % order.length];
+  touch(v);
   saveData();
 }
 
 function updateItemText(id, idx, text) {
   const v = findVenture(id);
   v.items[idx].text = text;
+  touch(v);
   saveData();
 }
 
 function removeItem(id, idx) {
   const v = findVenture(id);
+  const label = v.items[idx].text || 'this step';
+  if (!confirm(`Delete step "${label}"? This can't be undone.`)) return;
   v.items.splice(idx, 1);
+  touch(v);
   saveData();
 }
 
@@ -582,6 +658,7 @@ function addItem(id) {
   if (!text) return;
   const v = findVenture(id);
   v.items.push({ text, state: 'pending' });
+  touch(v);
   input.value = '';
   saveData();
 }
@@ -589,17 +666,21 @@ function addItem(id) {
 function updateStatus(id, status) {
   const v = findVenture(id);
   v.status = status;
+  touch(v);
   saveData();
 }
 
 function updateField(id, field, value) {
   const v = findVenture(id);
   v[field] = value;
+  touch(v);
   saveData();
 }
 
 function removeVenture(id) {
-  if (!confirm("Delete this venture? This can't be undone (unless you have a backup export).")) return;
+  const v = findVenture(id);
+  const label = v ? v.name : 'this venture';
+  if (!confirm(`Delete "${label}"? This can't be undone (unless you have a backup export).`)) return;
   data.ventures = data.ventures.filter(v => v.id !== id);
   saveData();
 }
@@ -611,7 +692,7 @@ document.getElementById('addVentureBtn').addEventListener('click', () => {
   const id = 'v' + Date.now();
   data.ventures.push({
     id, name, tag: '', status: 'notstarted',
-    nextAction: '', blockedBy: '', open: true, items: []
+    nextAction: '', blockedBy: '', open: true, items: [], updatedAt: Date.now()
   });
   input.value = '';
   saveData();
