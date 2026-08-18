@@ -266,10 +266,10 @@
         <div>
           1. <a href="https://console.firebase.google.com" target="_blank" style="color:var(--series-1)">console.firebase.google.com</a> → open <strong>the-hub-c8623</strong><br>
           2. Gear icon → Project settings → "Your apps" → copy the <code>firebaseConfig</code> object<br>
-          3. Paste the whole thing below (curly braces and all)
+          3. Paste the whole snippet below exactly as shown — including "const firebaseConfig = " and the closing ;
         </div>
       </details>
-      <textarea id="fb-config-input" placeholder='{"apiKey":"...","authDomain":"...","projectId":"...","storageBucket":"...","messagingSenderId":"...","appId":"..."}'></textarea>
+      <textarea id="fb-config-input" placeholder='const firebaseConfig = {&#10;  apiKey: "...",&#10;  authDomain: "...",&#10;  projectId: "...",&#10;  ...&#10;};'></textarea>
       <div class="modal-error" id="fb-error"></div>
       <div class="modal-actions">
         <button class="ghost" onclick="skipFbConfig()">Skip — use offline</button>
@@ -340,15 +340,31 @@ function skipFbConfig() {
   localStorage.setItem(FB_SKIP_KEY, '1');
   closeFbModal();
 }
+function parseFirebaseConfigInput(raw) {
+  // Accept plain JSON, OR the full snippet Firebase actually gives you:
+  // "const firebaseConfig = { apiKey: '...', ... };"
+  let cleaned = raw.trim();
+  // Strip a leading "const/let/var someName =" if present.
+  cleaned = cleaned.replace(/^(const|let|var)\s+\w+\s*=\s*/, '');
+  // Strip a trailing semicolon.
+  cleaned = cleaned.replace(/;\s*$/, '');
+  // Try strict JSON first (in case they pasted just the { ... } with quoted keys).
+  try {
+    return JSON.parse(cleaned);
+  } catch (e) { /* fall through */ }
+  // Fall back to treating it as a JS object literal (unquoted keys, single quotes — what Firebase actually shows).
+  return new Function('"use strict"; return (' + cleaned + ');')();
+}
+
 function saveFbConfig() {
   const raw = document.getElementById('fb-config-input').value.trim();
   const errEl = document.getElementById('fb-error');
   let parsed;
   try {
-    parsed = JSON.parse(raw);
+    parsed = parseFirebaseConfigInput(raw);
     if (!parsed.apiKey || !parsed.projectId) throw new Error('missing fields');
   } catch (e) {
-    errEl.textContent = "That doesn't look like a complete Firebase config — make sure you copied the whole { ... } block.";
+    errEl.textContent = "That doesn't look like a complete Firebase config — make sure you copied the whole thing, from \"const firebaseConfig\" through the closing };";
     errEl.style.display = 'block';
     return;
   }
